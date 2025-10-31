@@ -18,6 +18,10 @@ from database.db_manager import DatabaseManager
 from network.packet_sender import PacketSender
 from .settings_page import ModernMessageBox, ModernQuestionBox
 
+
+        
+
+
 class PacketSendThread(QThread):
     """发包线程"""
     progress_updated = pyqtSignal(int, int)  # 当前进度, 总数
@@ -62,6 +66,7 @@ class HomePage(QWidget):
         super().__init__()
         self.db_manager = db_manager
         self.send_thread = None
+        self.sort_order = Qt.DescendingOrder  # 排序状态：升序/降序
         
         # 设置首页背景
         self.setStyleSheet("""
@@ -75,6 +80,10 @@ class HomePage(QWidget):
         
     def init_ui(self):
         """初始化用户界面"""
+        # 检查是否已有布局，避免重复设置
+        if self.layout() is not None:
+            return
+            
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
@@ -148,6 +157,25 @@ class HomePage(QWidget):
         self.folder_tree.setHeaderLabels(["名称", "路径", "PCAP文件数", "操作"])
         self.folder_tree.setAlternatingRowColors(True)
         self.folder_tree.itemDoubleClicked.connect(self.on_item_double_clicked)
+        
+        # 启用排序功能
+        self.folder_tree.setSortingEnabled(True)
+        self.folder_tree.sortByColumn(0, self.sort_order)  # 默认按名称降序排序
+        
+        # 连接表头点击事件
+        header = self.folder_tree.header()
+        header.sectionClicked.connect(self.on_header_clicked)
+        
+        # 初始化表头显示排序状态
+        self.update_header_text()
+        
+        # 设置列宽 - 自适应优化
+        self.folder_tree.setColumnWidth(0, 250)  # 名称列更宽
+        self.folder_tree.setColumnWidth(1, 300)  # 路径列适中
+        self.folder_tree.setColumnWidth(2, 100)  # 文件数列较窄
+        self.folder_tree.setColumnWidth(3, 120)  # 操作列足够宽显示按钮
+        
+        # 设置表格样式，增加行高
         self.folder_tree.setStyleSheet("""
             QTreeWidget {
                 background-color: #ffffff;
@@ -158,8 +186,9 @@ class HomePage(QWidget):
                 alternate-background-color: #f8f9fa;
             }
             QTreeWidget::item {
-                padding: 8px;
+                padding: 12px 8px;
                 border-bottom: 1px solid #e9ecef;
+                min-height: 40px;
             }
             QTreeWidget::item:selected {
                 background-color: #e3f2fd;
@@ -172,9 +201,23 @@ class HomePage(QWidget):
                 background-color: #f8f9fa;
                 border: none;
                 border-bottom: 2px solid #dee2e6;
-                padding: 10px;
+                padding: 12px 10px;
                 font-weight: 600;
                 color: #495057;
+                min-height: 35px;
+            }
+            QHeaderView::section:hover {
+                background-color: #e9ecef;
+            }
+            QHeaderView::down-arrow {
+                width: 12px;
+                height: 12px;
+                background-color: transparent;
+            }
+            QHeaderView::up-arrow {
+                width: 12px;
+                height: 12px;
+                background-color: transparent;
             }
         """)
         tree_layout.addWidget(self.folder_tree)
@@ -271,15 +314,22 @@ class HomePage(QWidget):
         
         # 扫描子文件夹
         try:
+            folder_count = 0
             for item in os.listdir(target_folder):
                 item_path = os.path.join(target_folder, item)
                 if os.path.isdir(item_path):
                     self.add_folder_item(item_path)
+                    folder_count += 1
+                    self.log_message(f"添加文件夹: {item}")
                     
-            self.log_message("文件夹列表刷新完成")
+            self.log_message(f"文件夹列表刷新完成，共找到 {folder_count} 个子文件夹")
+            
+            # 强制更新UI显示
+            self.folder_tree.update()
+            self.folder_tree.repaint()
             
         except Exception as e:
-            self.log_message(f"扫描文件夹时出错: {str(e)}")
+            self.log_message(f"扫描文件夹时出错: {str(e)}", "red")  # 错误用红色
             
     def add_folder_item(self, folder_path: str):
         """添加文件夹项到树形控件"""
@@ -306,22 +356,25 @@ class HomePage(QWidget):
         
         # 添加发包按钮
         send_btn = QPushButton("📤 发包")
-        send_btn.setMaximumWidth(90)
+        send_btn.setMinimumWidth(100)  # 设置最小宽度
+        send_btn.setMaximumWidth(110)  # 增加最大宽度
+        send_btn.setMinimumHeight(32)  # 设置最小高度
         send_btn.setStyleSheet("""
             QPushButton {
-                background-color: #dc3545;
+                background-color: #4299e1;
                 color: white;
                 border: none;
-                border-radius: 5px;
-                padding: 6px 12px;
+                border-radius: 6px;
+                padding: 8px 14px;
                 font-weight: 500;
                 font-size: 12px;
+                text-align: center;
             }
             QPushButton:hover {
-                background-color: #c82333;
+                background-color: #3182ce;
             }
             QPushButton:pressed {
-                background-color: #bd2130;
+                background-color: #2c5aa0;
             }
         """)
         send_btn.clicked.connect(lambda: self.send_folder_packets(folder_path))
@@ -336,22 +389,25 @@ class HomePage(QWidget):
             
             # 为单个文件添加发包按钮
             file_send_btn = QPushButton("📤 发包")
-            file_send_btn.setMaximumWidth(90)
+            file_send_btn.setMinimumWidth(100)  # 设置最小宽度
+            file_send_btn.setMaximumWidth(110)  # 增加最大宽度
+            file_send_btn.setMinimumHeight(32)  # 设置最小高度
             file_send_btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #fd7e14;
+                    background-color: #2b6cb0;
                     color: white;
                     border: none;
-                    border-radius: 5px;
-                    padding: 6px 12px;
+                    border-radius: 6px;
+                    padding: 8px 14px;
                     font-weight: 500;
                     font-size: 12px;
+                    text-align: center;
                 }
                 QPushButton:hover {
-                    background-color: #e8650e;
+                    background-color: #2c5aa0;
                 }
                 QPushButton:pressed {
-                    background-color: #d35400;
+                    background-color: #2a4d8d;
                 }
             """)
             file_send_btn.clicked.connect(lambda checked, f=pcap_file: self.send_single_packet(f))
@@ -369,8 +425,7 @@ class HomePage(QWidget):
         """设置文件夹别名"""
         current_item = self.folder_tree.currentItem()
         if not current_item or current_item.parent() is not None:
-            dialog = ModernMessageBox(self, "警告", "请选择一个文件夹", "warning")
-            dialog.exec_()
+            self.log_message("请选择一个文件夹", color="red", flash=True)
             return
             
         folder_path = current_item.data(0, Qt.UserRole)
@@ -408,15 +463,8 @@ class HomePage(QWidget):
             dialog.exec_()
             return
             
-        # 确认发送
-        dialog = ModernQuestionBox(
-            self, "确认发送", 
-            f"确定要发送文件夹 '{os.path.basename(folder_path)}' 中的 {len(pcap_files)} 个PCAP文件吗？"
-        )
-        reply = dialog.exec_()
-        
-        if reply == dialog.Accepted:
-            self.start_packet_sending(pcap_files, network_interface, source_ip, dest_ip)
+        # 直接开始发包，无需确认
+        self.start_packet_sending(pcap_files, network_interface, source_ip, dest_ip)
             
     def send_single_packet(self, pcap_file: str):
         """发送单个PCAP文件"""
@@ -430,15 +478,8 @@ class HomePage(QWidget):
             dialog.exec_()
             return
             
-        # 确认发送
-        dialog = ModernQuestionBox(
-            self, "确认发送", 
-            f"确定要发送文件 '{os.path.basename(pcap_file)}' 吗？"
-        )
-        reply = dialog.exec_()
-        
-        if reply == dialog.Accepted:
-            self.start_packet_sending([pcap_file], network_interface, source_ip, dest_ip)
+        # 直接开始发包，无需确认
+        self.start_packet_sending([pcap_file], network_interface, source_ip, dest_ip)
             
     def start_packet_sending(self, pcap_files, network_interface, source_ip, dest_ip=None):
         """开始发包任务"""
@@ -508,20 +549,119 @@ class HomePage(QWidget):
         
         # 显示结果
         if success:
-            self.log_message(f"✓ {message}")
-            dialog = ModernMessageBox(self, "成功", message, "success")
-            dialog.exec_()
+            self.log_message(f"✓ {message}", "blue")  # 成功用蓝色
         else:
-            self.log_message(f"✗ {message}")
-            dialog = ModernMessageBox(self, "错误", message, "error")
-            dialog.exec_()
+            self.log_message(f"✗ {message}", "red", flash=True)   # 失败用红色闪烁
             
-    def log_message(self, message: str):
-        """添加日志消息"""
+    def log_message(self, message: str, color: str = "black", flash: bool = False):
+        """添加日志消息
+        
+        Args:
+            message: 日志消息内容
+            color: 消息颜色，支持 "red"(失败), "blue"(成功), "black"(日常信息)
+            flash: 是否启用闪烁效果（仅对红色有效）
+        """
         from datetime import datetime
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log_text.append(f"[{timestamp}] {message}")
+        
+        # 根据颜色设置HTML格式
+        color_map = {
+            "red": "#dc3545",      # 失败 - 红色
+            "blue": "#007bff",     # 成功 - 蓝色  
+            "black": "#000000"     # 日常信息 - 黑色
+        }
+        
+        html_color = color_map.get(color, "#000000")
+        
+        # 如果是红色且需要闪烁效果
+        if color == "red" and flash:
+            # 使用CSS动画实现闪烁效果
+            formatted_message = f'''
+            <span style="color: {html_color}; animation: flash 1s ease-in-out 3;">
+                [{timestamp}] {message}
+            </span>
+            <style>
+                @keyframes flash {{
+                    0%, 100% {{ opacity: 1; }}
+                    50% {{ opacity: 0.3; }}
+                }}
+            </style>
+            '''
+        else:
+            formatted_message = f'<span style="color: {html_color};">[{timestamp}] {message}</span>'
+        
+        self.log_text.append(formatted_message)
         
         # 自动滚动到底部
         scrollbar = self.log_text.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
+        
+        # 如果是红色闪烁，额外触发一个简单的背景闪烁效果
+        if color == "red" and flash:
+            self._flash_log_background()
+    
+    def _flash_log_background(self):
+        """日志区域背景闪烁效果"""
+        original_style = self.log_text.styleSheet()
+        
+        # 创建闪烁定时器
+        flash_timer = QTimer()
+        flash_count = 0
+        max_flashes = 6  # 闪烁3次（每次包含亮和暗）
+        
+        def flash_step():
+            nonlocal flash_count
+            if flash_count < max_flashes:
+                if flash_count % 2 == 0:
+                    # 设置红色背景
+                    self.log_text.setStyleSheet(original_style + """
+                        QTextEdit {
+                            background-color: rgba(220, 53, 69, 0.1);
+                            border: 2px solid #dc3545;
+                        }
+                    """)
+                else:
+                    # 恢复原始样式
+                    self.log_text.setStyleSheet(original_style)
+                flash_count += 1
+            else:
+                # 闪烁结束，恢复原始样式
+                self.log_text.setStyleSheet(original_style)
+                flash_timer.stop()
+                flash_timer.deleteLater()
+        
+        flash_timer.timeout.connect(flash_step)
+        flash_timer.start(200)  # 每200ms切换一次
+         
+    def on_header_clicked(self, logical_index):
+        """表头点击事件处理"""
+        if logical_index == 0:  # 只对名称列（第0列）启用排序
+            # 切换排序顺序
+            if self.sort_order == Qt.AscendingOrder:
+                self.sort_order = Qt.DescendingOrder
+            else:
+                self.sort_order = Qt.AscendingOrder
+            
+            # 应用排序
+            self.folder_tree.sortByColumn(0, self.sort_order)
+            
+            # 更新表头文本显示排序状态
+            self.update_header_text()
+            
+            # 记录排序状态
+            order_text = "升序" if self.sort_order == Qt.AscendingOrder else "降序"
+            self.log_message(f"按名称{order_text}排序")
+            
+    def update_header_text(self):
+        """更新表头文本显示排序状态"""
+        # 重置所有列的表头文本
+        headers = ["名称", "路径", "PCAP文件数", "操作"]
+        
+        # 为名称列添加排序箭头
+        if self.sort_order == Qt.AscendingOrder:
+            headers[0] = "名称 ▲"  # 升序箭头
+        else:
+            headers[0] = "名称 ▼"  # 降序箭头
+            
+        # 更新表头标签
+        self.folder_tree.setHeaderLabels(headers)

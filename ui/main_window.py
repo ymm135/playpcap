@@ -26,8 +26,14 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         """初始化用户界面"""
         self.setWindowTitle("PCAP播放器 v1.0.0")
-        self.setGeometry(100, 100, 1200, 800)
         self.setMinimumSize(800, 600)
+        
+        # 设置窗口大小并居中显示
+        self.resize(1200, 800)
+        self.center_window()
+        
+        # 设置窗口图标
+        self.setWindowIcon(QIcon("resources/ico/pcap.ico"))
         
         # 创建中央部件
         central_widget = QWidget()
@@ -185,6 +191,18 @@ class MainWindow(QMainWindow):
                 background-color: #ffffff;
             }
         """)
+        
+    def center_window(self):
+        """将窗口居中显示"""
+        # 获取屏幕几何信息
+        screen = QApplication.desktop().screenGeometry()
+        # 获取窗口几何信息
+        window = self.geometry()
+        # 计算居中位置
+        x = (screen.width() - window.width()) // 2
+        y = (screen.height() - window.height()) // 2
+        # 移动窗口到居中位置
+        self.move(x, y)
         
     def closeEvent(self, event):
         """关闭事件"""
